@@ -4,6 +4,7 @@ import requests
 from io import BytesIO
 from PIL import Image, ImageDraw
 from scipy.ndimage import label, find_objects
+from streamlit_image_coordinates import image_coordinates
 
 st.set_page_config(layout="wide")
 st.title("🎁 Открой свой подарок!")
@@ -20,7 +21,6 @@ gift_images = [
 # Загружаем основное изображение
 response = requests.get(main_image_url)
 main_img = Image.open(BytesIO(response.content)).convert("RGB")
-main_np = np.array(main_img)
 
 # Ищем жёлтые области
 hsv = np.array(main_img.convert("HSV"))
@@ -53,10 +53,8 @@ for url in gift_images:
             img = Image.open(BytesIO(response.content)).convert("RGBA")
             gift_items.append(img)
         else:
-            st.warning(f"❌ Не удалось загрузить: {url}")
             gift_items.append(None)
-    except Exception as e:
-        st.warning(f"⚠️ Ошибка при загрузке: {url}")
+    except Exception:
         gift_items.append(None)
 
 # Состояние
@@ -71,7 +69,7 @@ draw = ImageDraw.Draw(canvas)
 for i, (x, y, w, h) in enumerate(gifts):
     if st.session_state.opened[i] and gift_items[i] is not None:
         item = gift_items[i].resize((w, h))
-        canvas.paste(item, (x, y), item)  # поддержка прозрачности
+        canvas.paste(item, (x, y), item)
         draw.rectangle([x, y, x+w, y+h], outline="red", width=3)
     elif st.session_state.opened[i]:
         draw.rectangle([x, y, x+w, y+h], outline="gray", width=3)
@@ -79,14 +77,11 @@ for i, (x, y, w, h) in enumerate(gifts):
     else:
         draw.rectangle([x, y, x+w, y+h], outline="green", width=3)
 
-# Кнопки
-cols = st.columns(len(gifts))
-for i, col in enumerate(cols):
-    with col:
-        if not st.session_state.opened[i]:
-            if st.button(f"Открыть 🎁 #{i+1}"):
-                st.session_state.opened[i] = True
-                st.experimental_rerun()
-
-# Показываем результат
-st.image(canvas, caption="Ваши подарки")
+# Показываем изображение и отслеживаем клик
+coords = image_coordinates(canvas, key="giftmap")
+if coords is not None:
+    click_x, click_y = coords["x"], coords["y"]
+    for i, (x, y, w, h) in enumerate(gifts):
+        if x <= click_x <= x + w and y <= click_y <= y + h:
+            st.session_state.opened[i] = True
+            st.experimental_rerun()
