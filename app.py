@@ -3,6 +3,7 @@ import numpy as np
 import requests
 from io import BytesIO
 from PIL import Image, ImageDraw
+from scipy.ndimage import label, find_objects
 
 st.set_page_config(layout="wide")
 st.title("🎁 Открой свой подарок!")
@@ -28,9 +29,8 @@ mask = (
     (hsv[:, :, 1] >= 100) & (hsv[:, :, 2] >= 100)
 )
 
-# Находим bounding boxes вручную
+# Находим bounding boxes
 def find_boxes(mask):
-    from scipy.ndimage import label, find_objects
     labeled, _ = label(mask)
     slices = find_objects(labeled)
     boxes = []
@@ -45,7 +45,19 @@ def find_boxes(mask):
 gifts = find_boxes(mask)
 
 # Загружаем изображения подарков
-gift_items = [Image.open(BytesIO(requests.get(url).content)) for url in gift_images]
+gift_items = []
+for url in gift_images:
+    try:
+        response = requests.get(url, timeout=5)
+        if response.status_code == 200:
+            img = Image.open(BytesIO(response.content)).convert("RGBA")
+            gift_items.append(img)
+        else:
+            st.warning(f"❌ Не удалось загрузить: {url}")
+            gift_items.append(None)
+    except Exception as e:
+        st.warning(f"⚠️ Ошибка при загрузке: {url}")
+        gift_items.append(None)
 
 # Состояние
 if "opened" not in st.session_state:
@@ -55,12 +67,15 @@ if "opened" not in st.session_state:
 canvas = main_img.copy()
 draw = ImageDraw.Draw(canvas)
 
-# Обработка открытия
+# Вставка подарков
 for i, (x, y, w, h) in enumerate(gifts):
-    if st.session_state.opened[i]:
+    if st.session_state.opened[i] and gift_items[i] is not None:
         item = gift_items[i].resize((w, h))
-        canvas.paste(item, (x, y))
+        canvas.paste(item, (x, y), item)  # поддержка прозрачности
         draw.rectangle([x, y, x+w, y+h], outline="red", width=3)
+    elif st.session_state.opened[i]:
+        draw.rectangle([x, y, x+w, y+h], outline="gray", width=3)
+        draw.text((x+5, y+5), "❌ Нет подарка", fill="black")
     else:
         draw.rectangle([x, y, x+w, y+h], outline="green", width=3)
 
